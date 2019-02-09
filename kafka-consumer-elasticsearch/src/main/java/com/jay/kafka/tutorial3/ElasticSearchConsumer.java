@@ -27,6 +27,8 @@ import org.elasticsearch.common.xcontent.XContentType;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import com.google.gson.JsonParser;
+
 public class ElasticSearchConsumer {
 
 	public static RestHighLevelClient createClient() {
@@ -85,11 +87,21 @@ public class ElasticSearchConsumer {
 			for (ConsumerRecord<String, String> record : records) {
 				// insert data into ES
 				String jsonString = record.value();
-				IndexRequest indexRequest = new IndexRequest("twitter", "tweets").source(jsonString, XContentType.JSON);
+				
+				// 2 strategies
+				// kafka generic Id - unique
+				//String id = record.topic() + "_" + record.partition() + "_" + record.offset();
+				// twitter feed specific id and use it in IndexRequest
+				String id = extractIdFromTweet (record.value());
+				
+				IndexRequest indexRequest = new IndexRequest(
+						"twitter", 
+						"tweets",
+						id // this is to make idempotent consumer
+						).source(jsonString, XContentType.JSON);
 				
 				IndexResponse indexResponse = client.index(indexRequest, RequestOptions.DEFAULT);
-				String id = indexResponse.getId();
-				logger.info(id);
+				logger.info(indexResponse.getId());
 				try {
 					Thread.sleep (1000);
 				} catch (InterruptedException e) {
@@ -101,5 +113,15 @@ public class ElasticSearchConsumer {
 		
 		// close the client gracefully
 		//client.close();
+	}
+
+	
+	private static JsonParser jsonParser = new JsonParser();
+	private static String extractIdFromTweet(String tweetJson) {
+		// gson
+		return jsonParser.parse(tweetJson)
+				.getAsJsonObject()
+				.get("id_str")
+				.getAsString();
 	}
 }
